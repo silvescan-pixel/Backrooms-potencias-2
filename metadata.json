@@ -1,0 +1,6 @@
+{
+  "name": "Los Backrooms de las Matemáticas - 2º ESO",
+  "description": "Escape room interactivo de matemáticas para 2º ESO con retos de potencias, raíces, resolución de enigmas y diploma de certificación personalizable.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
