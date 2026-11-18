@@ -150,7 +150,7 @@ test('index.html standalone script matches STAGE_ORDER, syntax parses cleanly, a
   assert.equal(inlineJs.includes('El valor real es ${data.weightKg} kg'), false);
 });
 
-test('all 9 chambers have valid security-feed scene images, metadata, and offline export inlining', () => {
+test('all 9 chambers have valid security-feed scene images, metadata, and offline export support', () => {
   const html = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
   const scriptMatches = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
   const inlineJs = scriptMatches[scriptMatches.length - 1][1];
@@ -159,28 +159,34 @@ test('all 9 chambers have valid security-feed scene images, metadata, and offlin
   assert.ok(html.includes('id="intro-chamber-rec-text"'));
   assert.ok(html.includes('id="intro-chamber-cam-label"'));
   assert.ok(html.includes('id="chamber-asset-preload"'));
-  assert.ok(inlineJs.includes('toSceneBase64'));
-  assert.ok(inlineJs.includes('#chamber-asset-preload img[src]'));
+  assert.ok(inlineJs.includes('window.__PRISTINE_HTML'));
+  assert.ok(inlineJs.includes('function downloadStandaloneFile('));
 
   STAGE_ORDER.forEach((internalId, index) => {
     const camTag = `CAM-0${index + 1}`;
     assert.ok(inlineJs.includes(`camTag: "${camTag}"`), `Missing camTag ${camTag}`);
 
     const imgRegex = new RegExp(
-      `<img[^>]*data-chamber="${internalId}"[^>]*src="(/src/assets/images/[^"]+\\.jpg)"[^>]*>`,
+      `<img[^>]*data-chamber="${internalId}"[^>]*src="([^"]+)"[^>]*>`,
       'i'
     );
     const match = html.match(imgRegex);
     assert.ok(match, `Missing preload <img> for internal chamber ${internalId}`);
     assert.ok(match[0].includes('referrerpolicy="no-referrer"'), `Missing referrerPolicy for chamber ${internalId}`);
 
-    const diskPath = path.resolve(process.cwd(), match[1].replace(/^\//, ''));
-    assert.ok(fs.existsSync(diskPath), `Image file missing on disk: ${diskPath}`);
-    assert.ok(fs.statSync(diskPath).size > 10000, `Image file suspiciously small: ${diskPath}`);
+    const srcVal = match[1];
+    if (srcVal.startsWith('data:image/')) {
+      const b64Payload = srcVal.split(',')[1] || '';
+      assert.ok(Buffer.from(b64Payload, 'base64').length > 5000, `Embedded image suspiciously small for chamber ${internalId}`);
+    } else {
+      const diskPath = path.resolve(process.cwd(), srcVal.replace(/^\//, ''));
+      assert.ok(fs.existsSync(diskPath), `Image file missing on disk: ${diskPath}`);
+      assert.ok(fs.statSync(diskPath).size > 10000, `Image file suspiciously small: ${diskPath}`);
+    }
   });
 });
 
-test('splash screen and all 3 ending scenes have valid generated images and offline inlining', () => {
+test('splash screen and all 3 ending scenes have valid images and offline export support', () => {
   const html = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
   const scriptMatches = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
   const inlineJs = scriptMatches[scriptMatches.length - 1][1];
@@ -192,16 +198,22 @@ test('splash screen and all 3 ending scenes have valid generated images and offl
 
   ['splash', 'ending-good', 'ending-partial', 'ending-bad'].forEach((sceneKey) => {
     const imgRegex = new RegExp(
-      `<img[^>]*data-scene="${sceneKey}"[^>]*src="(/src/assets/images/[^"]+\\.jpg)"[^>]*>`,
+      `<img[^>]*data-scene="${sceneKey}"[^>]*src="([^"]+)"[^>]*>`,
       'i'
     );
     const match = html.match(imgRegex);
     assert.ok(match, `Missing preload <img> for scene ${sceneKey}`);
     assert.ok(match[0].includes('referrerpolicy="no-referrer"'), `Missing referrerPolicy for scene ${sceneKey}`);
 
-    const diskPath = path.resolve(process.cwd(), match[1].replace(/^\//, ''));
-    assert.ok(fs.existsSync(diskPath), `Scene image missing on disk: ${diskPath}`);
-    assert.ok(fs.statSync(diskPath).size > 10000, `Scene image suspiciously small: ${diskPath}`);
+    const srcVal = match[1];
+    if (srcVal.startsWith('data:image/')) {
+      const b64Payload = srcVal.split(',')[1] || '';
+      assert.ok(Buffer.from(b64Payload, 'base64').length > 5000, `Embedded scene image suspiciously small for ${sceneKey}`);
+    } else {
+      const diskPath = path.resolve(process.cwd(), srcVal.replace(/^\//, ''));
+      assert.ok(fs.existsSync(diskPath), `Scene image missing on disk: ${diskPath}`);
+      assert.ok(fs.statSync(diskPath).size > 10000, `Scene image suspiciously small: ${diskPath}`);
+    }
   });
 });
 
@@ -352,6 +364,81 @@ test('Bloque 2 visualizers, micro-animations, reduced-motion support, and origin
   assert.ok(inlineJs.includes('class TensionAudioEngine'));
 });
 
+test('V7 features: base parsing with parentheses/even sign equivalence, SHA-256 teacher hash, progress persistence, and Google Forms export', () => {
+  const html = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
+  const scriptMatches = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  const inlineJs = scriptMatches[scriptMatches.length - 1][1];
 
+  // Teacher password hash (no plaintext password exposed in CONFIG or hint)
+  assert.ok(inlineJs.includes('TEACHER_PWD_HASH:'));
+  assert.equal(inlineJs.includes('TEACHER_PASSWORD:'), false);
+  assert.equal(html.includes('Prueba con profe2026'), false);
 
+  // Google Forms UI & Progress persistence hooks
+  assert.ok(html.includes('id="send-grades-box"'));
+  assert.ok(html.includes('id="btn-send-grades"'));
+  assert.ok(html.includes('id="input-form-url"'));
+  assert.ok(inlineJs.includes('PROGRESS_KEY'));
+  assert.ok(inlineJs.includes('function saveProgress('));
+  assert.ok(inlineJs.includes('function clearProgress('));
+  assert.ok(inlineJs.includes('function offerRestoreProgress('));
+  assert.ok(inlineJs.includes('FORM_CFG_START'));
+  assert.ok(inlineJs.includes('FORM_CFG_END'));
 
+  // Base inputs on Cámaras 1-3 use text inputs so (-3) parentheses can be typed
+  ['c5', 'c6', 'c7'].forEach((c) => {
+    ['a', 'b', 'c'].forEach((part) => {
+      assert.ok(
+        new RegExp(`type="text"[^>]*id="input-${c}-base-${part}"`).test(html),
+        `Expected type="text" on input-${c}-base-${part}`
+      );
+    });
+  });
+
+  // Evaluate pure V7 helper functions directly
+  const helperStart = inlineJs.indexOf('function baseMatches(');
+  const helperEnd = inlineJs.indexOf('// ---- Envío de calificaciones');
+  assert.ok(helperStart > 0 && helperEnd > helperStart);
+
+  const parseFormStart = inlineJs.indexOf('function parseFormLink(');
+  const parseFormEnd = inlineJs.indexOf('function downloadStandaloneFile(');
+  assert.ok(parseFormStart > 0 && parseFormEnd > parseFormStart);
+
+  const loadHelpers = new Function(`
+    ${inlineJs.slice(helperStart, helperEnd)}
+    ${inlineJs.slice(parseFormStart, parseFormEnd)}
+    return { baseMatches, parseBase, escapeHtml, sha256Hex, parseFormLink };
+  `);
+  const { baseMatches, parseBase, escapeHtml, sha256Hex, parseFormLink } = loadHelpers();
+
+  // parseBase accepts integers, parentheses, whitespace, and Unicode minus signs
+  assert.equal(parseBase('-3'), -3);
+  assert.equal(parseBase('(-3)'), -3);
+  assert.equal(parseBase(' ( −5 ) '), -5);
+  assert.equal(parseBase('7'), 7);
+  assert.ok(Number.isNaN(parseBase('abc')));
+  assert.ok(Number.isNaN(parseBase('')));
+
+  // baseMatches allows positive/negative equivalence ONLY when correctExp is even
+  assert.equal(baseMatches(3, { correctBase: -3, correctExp: 6 }), true);
+  assert.equal(baseMatches(-3, { correctBase: -3, correctExp: 6 }), true);
+  assert.equal(baseMatches(3, { correctBase: -3, correctExp: 5 }), false);
+  assert.equal(baseMatches(-3, { correctBase: -3, correctExp: 5 }), true);
+
+  // sha256Hex matches expected teacher hash
+  assert.equal(
+    sha256Hex('bkrm|profe2026'),
+    'bdce88668f708bf0eb5f7642e971080f4683b2f3b0e15b0cac9ec8fbf0be6406'
+  );
+
+  // escapeHtml prevents XSS in team/student display
+  assert.equal(escapeHtml('<script>"a"&\'b\''), '&lt;script&gt;&quot;a&quot;&amp;&#39;b&#39;');
+
+  // parseFormLink validates Google Forms URLs & 11 ordered entries
+  const badUrl = parseFormLink('https://example.com/forms');
+  assert.ok(badUrl.error);
+  const sampleEntries = Array.from({ length: 11 }, (_, i) => `entry.${100 + i}=a${i + 1}`).join('&');
+  const validForm = parseFormLink(`https://docs.google.com/forms/d/e/ABC123XYZ/viewform?usp=pp_url&${sampleEntries}`);
+  assert.equal(validForm.action, 'https://docs.google.com/forms/d/e/ABC123XYZ/formResponse');
+  assert.equal(validForm.entries.length, 11);
+});
